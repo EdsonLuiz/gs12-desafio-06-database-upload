@@ -1,7 +1,13 @@
-import { getRepository } from 'typeorm';
+import {
+  getCustomRepository,
+  TransactionRepository,
+  getRepository,
+} from 'typeorm';
 import AppError from '../errors/AppError';
 
 import Transaction from '../models/Transaction';
+import TransactionsRepository from '../repositories/TransactionsRepository';
+import Category from '../models/Category';
 
 interface Request {
   category: string;
@@ -18,24 +24,40 @@ class CreateTransactionService {
     value,
   }: Request): Promise<Transaction> {
     // TODO
-    const transactionRepository = getRepository(Transaction);
+    if (!(type === 'income' || type === 'outcome')) {
+      throw new AppError('Type of transaction should be income or outcome.');
+    }
+    const transactionRepository = getCustomRepository(TransactionsRepository);
+    const categoryRepository = getRepository(Category);
 
-    const transaction = {} as Transaction;
+    const { total } = await transactionRepository.getBalance();
 
-    switch (type) {
-      case 'income':
-        return transaction;
-        break;
-      case 'outcome':
-        return transaction;
-        break;
-      default:
-        throw new AppError(
-          'Only accept transactions of type income or outcome.',
-        );
+    if (type === 'outcome' && total < value) {
+      throw new AppError('You do not have enough balance.');
     }
 
-    return transaction;
+    let returnedCategory = await categoryRepository.findOne({
+      where: { title: category },
+    });
+
+    if (!returnedCategory) {
+      returnedCategory = categoryRepository.create({
+        title: category,
+      });
+
+      await categoryRepository.save(returnedCategory);
+    }
+
+    const createdTransaction = transactionRepository.create({
+      title,
+      value,
+      type,
+      category: returnedCategory,
+    });
+
+    await transactionRepository.save(createdTransaction);
+
+    return createdTransaction;
   }
 }
 
